@@ -1,0 +1,300 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerMotor : MonoBehaviour
+{
+    [Header("Admin")]
+    public CharacterController controller;
+    public Transform camCont;
+
+    [Header("Walking and Sprinting")]
+    public float speed = 5f;
+    public float Sprintspeed = 12f;
+
+    [Header("Crouching")]
+    [Range(0,1)]
+    public float crouchHeight = 0.5f;
+    public float crouchSpeedModifyer = 0.5f;
+
+
+    [Header("Falling")]
+    public float gravity = -9.81f;
+    Vector3 velocity;
+
+    [Header("Jumping")]
+    public float jumpHeight = 3f;
+    public bool secondJump = true;
+    public float strafeSpeed = 10f;
+    [Range(0,1)]
+    public float turnDamp = 0.8f;
+    private Vector3 lastPos;
+    public Vector3 dir;
+
+
+    [Header("Gravity Checks")]
+    public Transform groundCheck;
+    public bool isGrounded;
+    public LayerMask groundMask;
+    public float groundDistance;
+
+    [Header("Ladders")]
+    public LayerMask LadderMask;
+    public Transform ladderCheck;
+    public float ladderCheckRadius = 0.4f;
+    public float ClimbSpeed = 3f;
+    bool isNextToLadder;
+    bool hasReachedTheTop;
+
+    [Header("WallRun")]
+    public Transform wallRunRight;
+    public Transform wallRunLeft;
+    public LayerMask WallRunMask;
+    public float wallCheckRadius = 0.4f;
+    public float wallRunSpeed = 1f;
+    public float wallGravity = 5f;
+    Vector3 wallVelocity;
+    public bool isTouchingWall;
+    public float rotateSpeed = 5f;
+    public float rotateAmount = 15f;
+    private float curAngle = 0f;
+
+
+
+
+    void Update()
+    {
+
+        Walk();
+        Crouch();
+        Climb();
+        ShouldWallRun();
+        WallRunMove();
+        WallRunAnimation();
+        ShouldAirStrafe();
+        AirStrafeMove();
+    }
+
+    //walking and falling 
+    public void Walk()
+    {
+        isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundMask);
+        if(isGrounded && velocity.y < 0)
+        {
+            velocity.y = -2f;
+        }
+
+        float x = Input.GetAxis("Horizontal");
+        float z = Input.GetAxis("Vertical");
+        if (!ShouldClimb() && !ShouldWallRun() && !ShouldAirStrafe())
+        {
+
+            Vector3 move = transform.right * x + transform.forward * z;
+
+            controller.Move(move * SpeedCalc() * crouchSpeedModifyer * Time.deltaTime);         
+        }
+        if(!ShouldClimb() && !ShouldWallRun())
+        {
+            DoubleJump();
+        }
+
+    }
+    public void DoubleJump()
+    {
+        if (Input.GetButtonDown("Jump") &&( isGrounded || ShouldWallRun()) && !ShouldCrouch())
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+        }
+        else if (!isGrounded && Input.GetButtonDown("Jump") && secondJump)
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            secondJump = false;
+        }
+        else if (!secondJump)
+        {
+            secondJump = isGrounded;
+        }
+
+        velocity.y += gravity * Time.deltaTime;
+
+        controller.Move(velocity * Time.deltaTime);
+    }
+
+    public float SpeedCalc()
+    {
+        if (Input.GetKey(KeyCode.LeftShift))
+        {
+            return Sprintspeed;
+        }
+        else
+        {
+            return speed;
+        }
+    }
+
+
+    //crouching
+    public bool ShouldCrouch()
+    {
+        if (Input.GetKey(KeyCode.LeftControl))
+        {
+            return true;
+        }
+        else 
+        {
+            return false;
+        }
+    }
+    public void Crouch()
+    {
+
+        if (ShouldCrouch())
+        {
+            transform.localScale = new Vector3(transform.localScale.x, crouchHeight, transform.localScale.z);
+            crouchSpeedModifyer = 0.5f;
+
+        }
+        else
+        {
+            crouchSpeedModifyer = 1f;
+            transform.localScale = new Vector3(transform.localScale.x, crouchHeight * 2, transform.localScale.z);
+        }
+
+
+    }
+
+    //ladder climbing
+    public bool ShouldClimb()
+    {
+        isNextToLadder =  Physics.CheckSphere(ladderCheck.position, ladderCheckRadius, LadderMask);
+        return isNextToLadder;
+    }
+    public void Climb()
+    {
+
+
+        float y = Input.GetAxis("Vertical");
+        float x = Input.GetAxis("Horizontal");
+
+        Vector3 move = (transform.up * y) + (transform.right * x);
+        if (ShouldClimb())
+        {
+            var ladderCol = Physics.OverlapSphere(ladderCheck.position, ladderCheckRadius, LadderMask);
+            Vector3 top = new Vector3(transform.position.x, ladderCol[0].transform.position.y * 2, transform.position.z);
+
+
+            controller.Move(move * ClimbSpeed * Time.deltaTime);
+            //if(Vector3.Distance(transform.position, top) <= 1f)
+            //{
+            //    ClimbOver(true, top);  
+            //}
+            //else
+            //{
+            //    ClimbOver(false, top);
+            //}
+        }
+    }
+    public void ClimbOver(bool nearTop, Vector3 top)
+    {
+        Vector3 target = new Vector3(transform.position.x, transform.position.y + 1, transform.position.z + 1);
+        if (nearTop && transform.position.y < top.y)
+        {
+            //Vector3 target = new Vector3(top.x, top.y + 10, top.z);
+            transform.position = target;
+        }
+        
+    }
+
+
+    //wallRun
+    public bool ShouldWallRun()
+    {
+        isTouchingWall = (Physics.CheckSphere(wallRunRight.position, wallCheckRadius, WallRunMask) | Physics.CheckSphere(wallRunLeft.position, wallCheckRadius, WallRunMask)) & !isGrounded;
+
+        return isTouchingWall;
+    }
+    private void WallRunMove()
+    { 
+        if (ShouldWallRun())
+        {
+            Vector3 move = transform.forward * wallRunSpeed;
+            controller.Move(move * wallRunSpeed * Time.deltaTime);
+
+            wallVelocity.y += wallGravity * Time.deltaTime;
+            controller.Move((wallVelocity * Time.deltaTime) * -1 );
+
+        }
+        if (isGrounded)
+        {
+            wallVelocity.y = -2f;
+        }
+    }
+    private void WallRunAnimation()
+    {
+        if (ShouldWallRun())
+        {
+            bool leanLeft = Physics.CheckSphere(wallRunRight.position, wallCheckRadius, WallRunMask);
+            bool leanRight = Physics.CheckSphere(wallRunLeft.position, wallCheckRadius, WallRunMask);
+
+            
+
+            if (leanLeft)
+            {
+                curAngle = Mathf.MoveTowardsAngle(curAngle, rotateAmount, rotateSpeed * Time.deltaTime);
+            }
+            else if (leanRight)
+            {
+                curAngle = Mathf.MoveTowardsAngle(curAngle,- rotateAmount, rotateSpeed * Time.deltaTime);
+            }
+            
+
+        }
+        if (!ShouldWallRun())
+        {
+            curAngle = Mathf.MoveTowardsAngle(curAngle, 0, rotateSpeed * Time.deltaTime);
+        }
+
+        camCont.transform.localRotation = Quaternion.AngleAxis(curAngle, Vector3.forward);
+
+    }
+
+    //airStrafing
+    public bool ShouldAirStrafe()
+    {
+        bool airStrafe = !isGrounded && !ShouldClimb();
+
+        return airStrafe;
+    }
+
+    private void AirStrafeMove()
+    {
+
+        Vector3 curPos = transform.position;
+        if (lastPos != curPos)
+        {
+            dir = (lastPos - curPos).normalized;
+        }
+        lastPos = curPos;
+
+
+
+        if (ShouldAirStrafe())
+        {
+            float x = Input.GetAxis("Horizontal") * turnDamp;
+            float y = Input.GetAxis("Vertical");
+            Vector3 move = (transform.forward * strafeSpeed * y) + (transform.right * strafeSpeed * x);
+            controller.Move(move * Time.deltaTime);
+        }
+
+    }
+
+
+    //gizmos
+    private void OnDrawGizmos()
+    {
+        Gizmos.DrawSphere(ladderCheck.position, ladderCheckRadius);
+        Gizmos.DrawSphere(wallRunLeft.position, wallCheckRadius);
+        Gizmos.DrawSphere(wallRunRight.position, wallCheckRadius);
+
+    }
+}
