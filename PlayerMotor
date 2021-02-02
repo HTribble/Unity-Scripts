@@ -1,3 +1,9 @@
+/*basic movement system
+crouch is cursed, it squashes everything on the y, it needs to half the size of the collider and move the camera down 
+also ground detection would be better with a box collider 
+additionally most of the public variables could be changed ot private serializable to improve performance 
+*/
+
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
